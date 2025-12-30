@@ -1,0 +1,77 @@
+# AutoRAG 한국어 설정 템플릿
+# 한국어 토크나이저 및 평가 지표 포함
+#
+# 사전 요구사항:
+# pip install "AutoRAG[ko]"
+# export OPENAI_API_KEY="your-api-key"
+#
+# 사용법:
+# autorag evaluate --config korean_config.yaml --qa_data_path qa.parquet --corpus_data_path corpus.parquet
+
+node_lines:
+  # 검색 노드 라인
+  - node_line_name: retrieve_node_line
+    nodes:
+      # BM25 검색 (한국어 토크나이저)
+      - node_type: lexical_retrieval
+        strategy:
+          metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
+        top_k: 10
+        modules:
+          - module_type: bm25
+            bm25_tokenizer: kiwi  # 한국어 형태소 분석기
+
+      # 벡터 검색
+      - node_type: semantic_retrieval
+        strategy:
+          metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
+        top_k: 10
+        modules:
+          - module_type: vectordb
+            vectordb: default
+
+      # 하이브리드 검색 (BM25 + 벡터)
+      - node_type: hybrid_retrieval
+        strategy:
+          metrics: [retrieval_f1, retrieval_recall, retrieval_precision]
+        top_k: 5
+        modules:
+          - module_type: hybrid_rrf
+            weight_range: (4, 80)
+
+  # 생성 노드 라인
+  - node_line_name: post_retrieve_node_line
+    nodes:
+      # 프롬프트 구성
+      - node_type: prompt_maker
+        strategy:
+          metrics: [bleu, meteor, rouge]
+          generator_modules:
+            - module_type: llama_index_llm
+              llm: openai
+              model: [gpt-4o-mini]
+        modules:
+          - module_type: fstring
+            prompt: |
+              주어진 문서를 참고하여 질문에 답하시오.
+
+              문서:
+              {retrieved_contents}
+
+              질문: {query}
+
+              답변:
+
+      # 답변 생성
+      - node_type: generator
+        strategy:
+          metrics:
+            - metric_name: rouge
+            - metric_name: bert_score
+              lang: ko              # 한국어 BERTScore
+            - metric_name: sem_score
+              embedding_model: openai
+        modules:
+          - module_type: llama_index_llm
+            llm: openai
+            model: [gpt-4o-mini]
